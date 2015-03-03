@@ -8,18 +8,19 @@ import java.nio.channels.ServerSocketChannel
  */
 object Start {
   def main(args:Array[String]): Unit ={
+    val subReactorCount=4
     val serverSocket=ServerSocketChannel.open()
     serverSocket.bind(new InetSocketAddress(10002))
-    val reactors=new MultiReactor(serverSocket)
-    doSingleThreadJob(reactors.doAccept)
-    doSingleThreadJob(reactors.doRead)
-    doSingleThreadJob(reactors.doBroadcastServerTime)
+    val reactors=new MultiReactor(serverSocket,subReactorCount)
+    doSingleThreadJob(0,reactors.doAccept)
+    (0 to subReactorCount).foreach(doSingleThreadJob(_,reactors.doRead))
+    doSingleThreadJob(0,reactors.doBroadcastServerTime)
   }
-  def doSingleThreadJob(fn:()=>Int)={
+  def doSingleThreadJob(index:Int,fn:(Int)=>Int)={
     new Thread(new Runnable {
       override def run(): Unit = {
         while(true){
-          fn()
+          fn(index)
         }
       }
     }).start()

@@ -11,8 +11,8 @@ import java.util.concurrent.{Executors, ConcurrentHashMap}
  * Created by yangguo on 15-3-3.
  */
 
-class MultiReactor(serverSocket:ServerSocketChannel) {
-  val readSelector=Selector.open()
+class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
+  val readSelectors=(0 to subSelectorCount).map(index=>Selector.open())
   val acceptSelector=Selector.open()
   val interruptTime=20000
   lazy val clients=new ConcurrentHashMap[Long,SocketChannel]()
@@ -21,10 +21,10 @@ class MultiReactor(serverSocket:ServerSocketChannel) {
   serverSocket.register(acceptSelector,SelectionKey.OP_ACCEPT)
 
 
-  def doBroadcastServerTime():Int={
+  def doBroadcastServerTime(index:Int):Int={
     Thread.sleep(interruptTime-1000)
     import scala.collection.JavaConverters._
-    val keys=readSelector.keys().asScala
+    val keys=readSelectors.flatMap(s=>s.keys().asScala)
     keys.foreach{key=>
       val channel=key.channel().asInstanceOf[SocketChannel]
       if(channel.isOpen&&channel.isConnected){
@@ -39,14 +39,16 @@ class MultiReactor(serverSocket:ServerSocketChannel) {
     }
     0
   }
-  def doRead(): Int ={
+  def doRead(index:Int): Int ={
+    val readSelector=readSelectors(index)
     val res=if(readSelector.select(interruptTime-10000)>0) {
       var validCount=0
       val keys = readSelector.selectedKeys()
       val it=keys.iterator()
       while(it.hasNext) {
         val key=it.next()//.asInstanceOf[SocketChannel]
-        workerPool.submit(new MessageHandler(key))
+//        workerPool.submit(new MessageHandler(key))
+        new MessageHandler(key).run()
         validCount+=1
       }
       keys.clear()
@@ -63,11 +65,9 @@ class MultiReactor(serverSocket:ServerSocketChannel) {
       val socket = key.channel().asInstanceOf[SocketChannel]
       val buffer = ByteBuffer.allocate(1024)
       val temp = new ByteArrayOutputStream()
-
       var isOver = false
       while (!isOver) {
         val count = socket.read(buffer)
-        println(s"currentThread=${Thread.currentThread().getName} ,read count=$count")
         if (count <= 0) {
           if (count < 0) {
             unsafeClose(key)
@@ -76,7 +76,8 @@ class MultiReactor(serverSocket:ServerSocketChannel) {
         }
         temp.write(buffer.array(), 0, count)
       }
-      println(new String(temp.toByteArray, "utf8"))
+     println(s"currentThread=${Thread.currentThread().getName} ,read count=${temp.size()}")
+      println("read message=["+new String(temp.toByteArray, "utf8")+"]")
     }
   }
 
@@ -99,9 +100,10 @@ class MultiReactor(serverSocket:ServerSocketChannel) {
   private[this] def registerRead(channel:SocketChannel)={
     channel.configureBlocking(false)
 //    channel.register(writeSelector,SelectionKey.OP_WRITE)
-    channel.register(readSelector,SelectionKey.OP_READ)
+    val index:Int=(new Date().getTime%4).toInt
+    channel.register(readSelectors(index),SelectionKey.OP_READ)
   }
-  def doAccept():Int= {
+  def doAccept(index:Int):Int= {
     val res=if (acceptSelector.select(interruptTime) > 0) {
       var validCount = 0
       val keys = acceptSelector.selectedKeys()
