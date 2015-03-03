@@ -25,11 +25,12 @@ class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
     Thread.sleep(interruptTime-1000)
     import scala.collection.JavaConverters._
     val keys=readSelectors.flatMap(s=>s.keys().asScala)
+    val response=s"Server Time ${new Date().getTime}".getBytes(Charset.forName("utf8"))
     keys.foreach{key=>
       val channel=key.channel().asInstanceOf[SocketChannel]
       if(channel.isOpen&&channel.isConnected){
         try {
-          channel.write(ByteBuffer.wrap(s"Server Time ${new Date().getTime}".getBytes(Charset.forName("utf8"))))
+          channel.write(ByteBuffer.wrap(response))
         }catch{
           case ex:Throwable=>unsafeClose(key)
         }
@@ -46,9 +47,10 @@ class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
       val keys = readSelector.selectedKeys()
       val it=keys.iterator()
       while(it.hasNext) {
-        val key=it.next()//.asInstanceOf[SocketChannel]
+        val key=it.next()
 //        workerPool.submit(new MessageHandler(key))
-        new MessageHandler(key).run()
+//        new MessageHandler(key).run()
+        readMsg(key)
         validCount+=1
       }
       keys.clear()
@@ -58,27 +60,29 @@ class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
     res
   }
   private[this] class MessageHandler(key:SelectionKey) extends Runnable{
-    override def run(): Unit = decodeMsg(key)
+    override def run(): Unit = readMsg(key)
   }
-  private[this] def decodeMsg(key:SelectionKey): Unit = {
+  private[this] def readMsg(key:SelectionKey): Unit = {
    if(key.isValid&&key.isReadable) {
-      val socket = key.channel().asInstanceOf[SocketChannel]
-      val buffer = ByteBuffer.allocate(1024)
-      val temp = new ByteArrayOutputStream()
-      var isOver = false
-      while (!isOver) {
-        val count = socket.read(buffer)
-        if (count <= 0) {
-          if (count < 0) {
-            unsafeClose(key)
-          }
-          isOver = true
-        }
-        temp.write(buffer.array(), 0, count)
-      }
+     val socket = key.channel().asInstanceOf[SocketChannel]
+     val buffer = ByteBuffer.allocate(1024)
+     val temp = new ByteArrayOutputStream()
+     var isOver = false
+     while (!isOver) {
+       val count = socket.read(buffer)
+       if (count <= 0) {
+         if (count < 0) {
+           unsafeClose(key)
+         }
+         isOver = true
+       }
+       temp.write(buffer.array(), 0, count)
+     }
      println(s"currentThread=${Thread.currentThread().getName} ,read count=${temp.size()}")
-      println("read message=["+new String(temp.toByteArray, "utf8")+"]")
-    }
+     println("read message=[" + new String(temp.toByteArray, "utf8") + "]")
+     temp.close()
+
+   }
   }
 
   private[this] def unsafeClose(selectKey:SelectionKey)= {

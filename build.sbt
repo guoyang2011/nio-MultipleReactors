@@ -12,3 +12,6 @@ libraryDependencies += "org.apache.hadoop" % "hadoop-client" % "2.2.0" withJavad
 
 libraryDependencies += "org.apache.spark" %% "spark-mllib" % "1.0.2" withSources() withJavadoc()
 
+libraryDependencies += "io.netty" % "netty-all" % "4.0.17.Final" withSources() withJavadoc()
+
+
