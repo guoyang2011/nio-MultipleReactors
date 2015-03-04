@@ -48,9 +48,8 @@ class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
       val it=keys.iterator()
       while(it.hasNext) {
         val key=it.next()
-//        workerPool.submit(new MessageHandler(key))
-//        new MessageHandler(key).run()
-        readMsg(key)
+        key.interestOps(key.interestOps() & ~SelectionKey.OP_READ)
+        workerPool.submit(new MessageHandler(key))
         validCount+=1
       }
       keys.clear()
@@ -67,21 +66,36 @@ class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
      val socket = key.channel().asInstanceOf[SocketChannel]
      val buffer = ByteBuffer.allocate(1024)
      val temp = new ByteArrayOutputStream()
+     val slickedData=ByteBuffer.allocate(1024)
      var isOver = false
+     var isClosed=false
      while (!isOver) {
+       buffer.clear()
        val count = socket.read(buffer)
+       buffer.flip()
+       while(buffer.hasRemaining){
+         val b=buffer.get()
+         if(b=='#'.toByte){
+           slickedData.flip()
+           println("包数据package data="+new String(slickedData.array()))
+           slickedData.clear()
+         }else {
+           slickedData.put(b)
+         }
+       }
        if (count <= 0) {
          if (count < 0) {
+           isClosed=true
            unsafeClose(key)
          }
          isOver = true
        }
-       temp.write(buffer.array(), 0, count)
+       if(count>0) temp.write(buffer.array(), 0, count)
      }
+     if(!isClosed) key.interestOps(key.interestOps() | SelectionKey.OP_READ)
      println(s"currentThread=${Thread.currentThread().getName} ,read count=${temp.size()}")
      println("read message=[" + new String(temp.toByteArray, "utf8") + "]")
      temp.close()
-
    }
   }
 
@@ -103,7 +117,6 @@ class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
   }
   private[this] def registerRead(channel:SocketChannel)={
     channel.configureBlocking(false)
-//    channel.register(writeSelector,SelectionKey.OP_WRITE)
     val index:Int=(new Date().getTime%4).toInt
     channel.register(readSelectors(index),SelectionKey.OP_READ)
   }
@@ -126,7 +139,7 @@ class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
     } else {
       0
     }
-    println("New Connection Channel Count="+res)
+    println("New Connection Channel Count="+res+",accept selector count="+acceptSelector.keys().size())
     res
   }
   /**
