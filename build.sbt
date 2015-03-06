@@ -14,4 +14,5 @@ libraryDependencies += "org.apache.spark" %% "spark-mllib" % "1.0.2" withSources
 
 libraryDependencies += "io.netty" % "netty-all" % "4.0.17.Final" withSources() withJavadoc()
 
+libraryDependencies += "com.twitter" % "util-core_2.10" % "6.22.0" withSources() withJavadoc()
 

@@ -4,28 +4,28 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.{SocketChannel, SelectionKey, Selector, ServerSocketChannel}
 import java.nio.charset.Charset
-import java.util.Date
 import java.util.concurrent.{Executors, ConcurrentHashMap}
+
+import cn.changhong.nio.multi.selector.demo.v2.ConsistentHash
 
 /**
  * Created by yangguo on 15-3-3.
  */
-
+@deprecated("use v2 model")
 class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
-  val readSelectors=(0 to subSelectorCount).map(index=>Selector.open())
+  val readSelectors=(0 to subSelectorCount).toArray.map(index=>Selector.open())
+  val subSelectors=ConsistentHash[Selector](readSelectors)
   val acceptSelector=Selector.open()
   val interruptTime=20000
   lazy val clients=new ConcurrentHashMap[Long,SocketChannel]()
   lazy val workerPool=Executors.newFixedThreadPool(4)
   serverSocket.configureBlocking(false)
   serverSocket.register(acceptSelector,SelectionKey.OP_ACCEPT)
-
-
   def doBroadcastServerTime(index:Int):Int={
     Thread.sleep(interruptTime-1000)
     import scala.collection.JavaConverters._
     val keys=readSelectors.flatMap(s=>s.keys().asScala)
-    val response=s"Server Time ${new Date().getTime}".getBytes(Charset.forName("utf8"))
+    val response=s"Server Time ${System.currentTimeMillis()}".getBytes(Charset.forName("utf8"))
     keys.foreach{key=>
       val channel=key.channel().asInstanceOf[SocketChannel]
       if(channel.isOpen&&channel.isConnected){
@@ -117,8 +117,11 @@ class MultiReactor(serverSocket:ServerSocketChannel,subSelectorCount:Int=4) {
   }
   private[this] def registerRead(channel:SocketChannel)={
     channel.configureBlocking(false)
-    val index:Int=(new Date().getTime%4).toInt
-    channel.register(readSelectors(index),SelectionKey.OP_READ)
+//    val index:Int=(System.currentTimeMillis()%4).toInt//
+    subSelectors.get(channel) match { //consistent hash
+      case Some(selector)=>channel.register (selector, SelectionKey.OP_READ)
+      case None=>println("register error")
+    }
   }
   def doAccept(index:Int):Int= {
     val res=if (acceptSelector.select(interruptTime) > 0) {
